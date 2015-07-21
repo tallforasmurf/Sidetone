@@ -7,6 +7,9 @@ Populate the comboboxes with names of available audio devices.
 from PyQt5.QtCore import (
     Qt
 )
+
+from PyQt5.QtGui import QPixmap
+
 from PyQt5.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -111,7 +114,6 @@ class SideToneWidget( QWidget ) :
         # to the output device's start() method.
         if self.otput_device :
             self.input_device.start( self.otput_device.start() )
-            print(self.input_device.bufferSize() )
             #self.otput_device.start( self.input_device.start() )
 
     # On a change in the selection of output choice: If we have an output
@@ -128,6 +130,7 @@ class SideToneWidget( QWidget ) :
         preferred_format = audio_info.preferredFormat()
         self.otput_device = QAudioOutput( audio_info, preferred_format )
         self.otput_device.setVolume( self.volume.value() / 100 )
+        #self.otput_device.setBufferSize( 384 )
         if self.input_device :
             self.input_device.start( self.otput_device.start() )
             #self.otput_device.start( self.input_device.start() )
@@ -146,10 +149,14 @@ class SideToneWidget( QWidget ) :
     of __init__. Here just make the layout.
         '''
         # Create the big honkin' label and logo
-        self.label = QLabel("Sidetone!")
+        icon_pixmap = QPixmap( ':/icon.png' ).scaledToWidth(64)
+        icon_label = QLabel()
+        icon_label.setPixmap( icon_pixmap )
+        text_label = QLabel("Sidetone!")
         hb_label = QHBoxLayout()
         hb_label.addStretch(1)
-        hb_label.addWidget( self.label , 0 )
+        hb_label.addWidget( icon_label , 0 )
+        hb_label.addWidget( text_label , 0 )
         hb_label.addStretch(1)
 
         # Create a list of QAudioInfo objects for inputs
@@ -195,6 +202,7 @@ class SideToneWidget( QWidget ) :
 
 def main():
     import sys
+    import icon
     app = QApplication(sys.argv)
 
     main = QMainWindow()
