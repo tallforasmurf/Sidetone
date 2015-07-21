@@ -1,7 +1,14 @@
 '''
 
-Make a little old window with two comboboxes, inputs and outputs.
-Populate the comboboxes with names of available audio devices.
+Provide controllable sidetone from an input device, presumably a mic,
+to an output device, presumably headphones.
+
+Gets names of all available audio inputs and outputs.
+Populates comboboxes with names of available audio devices.
+When user selects a device, notes it. When both an input and
+an output are selected, corresponding audio devices are created
+and connected. The user can control the volume with a slider and
+mute with a checkbox.
 
 '''
 from PyQt5.QtCore import (
