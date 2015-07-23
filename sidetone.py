@@ -38,6 +38,10 @@ from PyQt5.QtMultimedia import (
 class SideToneWidget( QWidget ) :
     def __init__( self, parent ) :
         super().__init__( parent )
+        # Save link to main window
+        self.main_window = parent
+        # Get the status bar
+        self.status_bar = parent.statusBar()
         # Slot that will point to a QAudioInput some day
         self.input_device = None
         # Slot that will point to a QAudioOutput in time
@@ -155,6 +159,7 @@ class SideToneWidget( QWidget ) :
     hooking put the signals to useful slots is the job
     of __init__. Here just make the layout.
         '''
+        self.setMinimumWidth(400)
         # Create the big honkin' label and logo
         icon_pixmap = QPixmap( ':/icon.png' ).scaledToWidth(64)
         icon_label = QLabel()
@@ -168,6 +173,8 @@ class SideToneWidget( QWidget ) :
 
         # Create a list of QAudioInfo objects for inputs
         self.input_info_list = QAudioDeviceInfo.availableDevices( QAudio.AudioInput )
+        if 0 == len(self.input_info_list) :
+            self.input_info_list = [ QAudioDeviceInfo.defaultInputDevice() ]
         # Create a combo box and populate it with names of inputs
         self.cb_inputs = QComboBox()
         self.cb_inputs.addItems(
@@ -175,6 +182,9 @@ class SideToneWidget( QWidget ) :
             )
         # Create a list of QAudioInfo objects for outputs
         self.otput_info_list = QAudioDeviceInfo.availableDevices( QAudio.AudioOutput )
+        if 0 == len( self.otput_info_list ) :
+            self.otput_info_list = [ QAudioDeviceInfo.defaultOutputDevice() ]
+        self.status_bar.showMessage( '{} inputs {} otputs'.format(len(self.input_info_list),len(self.otput_info_list)),2000 )
         # Create a combo box and populate it with names of outputs
         self.cb_otputs = QComboBox()
         self.cb_otputs.addItems(
