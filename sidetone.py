@@ -4,7 +4,9 @@ Provide controllable sidetone from an input device, presumably a mic,
 to an output device, presumably headphones.
 
 Gets names of all available audio inputs and outputs.
+
 Populates comboboxes with names of available audio devices.
+
 When user selects a device, notes it. When both an input and
 an output are selected, corresponding audio devices are created
 and connected. The user can control the volume with a slider and
@@ -12,8 +14,10 @@ mute with a checkbox.
 
 '''
 from PyQt5.QtCore import (
-    Qt
+    Qt,QTime
 )
+
+from PyQt5.QtTest import QTest
 
 from PyQt5.QtGui import QPixmap
 
@@ -42,20 +46,23 @@ class SideToneWidget( QWidget ) :
         self.main_window = parent
         # Get the status bar
         self.status_bar = parent.statusBar()
+        # just the time
+        self.time = QTime()
+        self.time.start()
         # Slot that will point to a QAudioInput some day
         self.input_device = None
         # Slot that will point to a QAudioOutput in time
         self.otput_device = None
         # set up layout, creating:
-        # self.input_info_list, list of QAudioInfo for inputs
-        # self.cb_inputs, combox of input names in same order
-        # self.otput_info_list, list of QAudioInfo for outputs
-        # self.cb_otputs, combox of output names in same order
-        # self.volume, volume slider
-        # self.mute, mute checkbox
+        #   self.input_info_list, list of QAudioInfo for inputs
+        #   self.cb_inputs, combox of input names in same order
+        #   self.otput_info_list, list of QAudioInfo for outputs
+        #   self.cb_otputs, combox of output names in same order
+        #   self.volume, volume slider
+        #   self.mute, mute checkbox
         self._uic()
         # Connect up signals to slots.
-        # Changes in the comboxes go to in_device and ot_device
+        # Changes in the combox selections go to in_device and ot_device
         self.cb_inputs.currentIndexChanged.connect( self.in_dev_change )
         self.cb_otputs.currentIndexChanged.connect( self.ot_dev_change )
         # Mute button goes to mute_change
@@ -64,6 +71,19 @@ class SideToneWidget( QWidget ) :
         self.volume.valueChanged.connect( self.volume_change )
         # Start with the mute switch on. This triggers the above two signals.
         self.mute.setChecked( True )
+
+    # Define a custom CloseEvent handler. When we receive the Close event,
+    # and we have working audio devices, stop them and trash them. The intent
+    # is to hopefully avoid an occasional segfault in the Mac audio device on
+    # shutdown.
+    def closeEvent( self, event ) :
+        if self.otput_device : # we have an output device
+            self.otput_device.stop()
+        if self.input_device : # we have an input device
+            self.input_device.stop()
+        self.otput_device = None
+        self.input_device = None
+        event.accept()
 
     # Slot for any change in volume (or mute). If we have an output device
     # then convert level to a real and pass to the output device. If the new
@@ -120,33 +140,52 @@ class SideToneWidget( QWidget ) :
         self.input_device = QAudioInput( audio_info, preferred_format )
         self.input_device.setVolume( 1.0 )
         self.input_device.setBufferSize( 384 )
+        # hook up possible debug printout
+        self.input_device.stateChanged.connect(self.in_dev_state_change)
         # If we have an output device, redirect it to this input. This is
-        # done by asking the input device for its QIODevice, and passing that
-        # to the output device's start() method.
+        # done by asking the OUTput device for its QIODevice, and passing that
+        # to the INput device's start() method.
         if self.otput_device :
             self.input_device.start( self.otput_device.start() )
             #self.otput_device.start( self.input_device.start() )
+        # else wait for the output device to be created
 
-    # On a change in the selection of output choice: If we have an output
-    # device, get rid of it. Create a new output device. If we have an input
-    # device, connect the two. Set the output level from the volume slider.
+    # On a change in the selection of output choice: If we have an input
+    # device, tell it to stop. If we have an output device, get rid of it.
+    # Create a new output device. If we have an input device, connect the
+    # two. Set the output level from the volume slider.
 
     def ot_dev_change( self, new_index ) :
         if self.otput_device :
             if self.input_device :
                 self.input_device.stop()
             self.otput_device.stop()
-            self.otput_device = None
+            self.otput_device = None # object goes out of scope
         audio_info = self.otput_info_list[ new_index ]
         preferred_format = audio_info.preferredFormat()
         self.otput_device = QAudioOutput( audio_info, preferred_format )
         self.otput_device.setVolume( self.volume.value() / 100 )
+        self.otput_device.stateChanged.connect(self.ot_dev_state_change)
         #self.otput_device.setBufferSize( 384 )
         if self.input_device :
             self.input_device.start( self.otput_device.start() )
             #self.otput_device.start( self.input_device.start() )
 
+    # Show some text in the main-window status bar for 1 second, more or less.
+    def show_status( self, text, duration=1000 ):
+        self.status_bar.showMessage( text, duration )
 
+    def in_dev_state_change( self, new_state):
+        #self.show_status(
+            #'{} in dev state {}'.format(self.time.elapsed(),int(new_state))
+        #)
+        pass
+
+    def ot_dev_state_change( self, new_state):
+        #self.show_status(
+            #'{} ot dev state {}'.format(self.time.elapsed(),int(new_state))
+        #)
+        pass
 
     def _uic( self ) :
         '''
@@ -156,7 +195,7 @@ class SideToneWidget( QWidget ) :
         [input combobox]    [output combobox]
                [volume slider]  [x] Mute
 
-    hooking put the signals to useful slots is the job
+    Hooking the signals to useful slots is the job
     of __init__. Here just make the layout.
         '''
         self.setMinimumWidth(400)
@@ -180,53 +219,64 @@ class SideToneWidget( QWidget ) :
         self.cb_inputs.addItems(
             [ audio_info.deviceName() for audio_info in self.input_info_list ]
             )
+
         # Create a list of QAudioInfo objects for outputs
         self.otput_info_list = QAudioDeviceInfo.availableDevices( QAudio.AudioOutput )
         if 0 == len( self.otput_info_list ) :
             self.otput_info_list = [ QAudioDeviceInfo.defaultOutputDevice() ]
-        self.status_bar.showMessage( '{} inputs {} otputs'.format(len(self.input_info_list),len(self.otput_info_list)),2000 )
+        self.show_status(
+            '{} inputs {} otputs'.format(len(self.input_info_list),len(self.otput_info_list))
+        )
         # Create a combo box and populate it with names of outputs
         self.cb_otputs = QComboBox()
         self.cb_otputs.addItems(
             [ audio_info.deviceName() for audio_info in self.otput_info_list ]
             )
+
         # Lay those two out aligned to the outside
         hb_combos = QHBoxLayout()
         hb_combos.addWidget( self.cb_inputs, 1 )
         hb_combos.addStretch( 0 )
         hb_combos.addWidget( self.cb_otputs, 1 )
+
         # Create a volume slider from 0 to 100.
         self.volume = QSlider( Qt.Horizontal, self )
         self.volume.setMinimum( 0 )
         self.volume.setMaximum( 100 )
         self.volume.setTickInterval( 10 )
         self.volume.setTickPosition( QSlider.TicksBothSides )
+
         # Create a checkbox "Mute"
         self.mute = QCheckBox( 'Mute' )
+
         # Put those together in a row squeezed in the center
         hb_volume = QHBoxLayout()
         hb_volume.addStretch( 1 )
         hb_volume.addWidget( self.volume, 1 )
         hb_volume.addWidget( self.mute, 0)
         hb_volume.addStretch( 1 )
+
         # Stack all those up as this widget's layout
         vlayout = QVBoxLayout()
         vlayout.addLayout( hb_label )
         vlayout.addLayout( hb_combos )
         vlayout.addLayout( hb_volume )
         self.setLayout( vlayout )
+
         # end of _uic
 
 def main():
     import sys
     import icon
     app = QApplication(sys.argv)
+    QTest.qWait( 500 ) # idle for half a second before doing stuff
 
     main = QMainWindow()
     central = SideToneWidget( main )
     main.setCentralWidget( central )
     main.show()
     app.exec_()
+    QTest.qWait( 500 ) # idle for half a second to let Python shut down
 
 if __name__ == '__main__' :
     main()
