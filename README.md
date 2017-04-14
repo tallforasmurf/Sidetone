@@ -23,7 +23,7 @@ and restored on the next run.
 
 You need to have PyQt5 and Python 3.4+ installed. Then start the app using
 
-    `python sidetone.py`
+    python sidetone.py
 
 
 *Hey, apologies to the person who submitted a pull request to add info to this
