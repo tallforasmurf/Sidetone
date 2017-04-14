@@ -72,120 +72,159 @@ class SideToneWidget( QWidget ) :
         # Start with the mute switch on. This triggers the above two signals.
         self.mute.setChecked( True )
 
-    # Define a custom CloseEvent handler. When we receive the Close event,
-    # and we have working audio devices, stop them and trash them. The intent
-    # is to hopefully avoid an occasional segfault in the Mac audio device on
-    # shutdown.
-    def closeEvent( self, event ) :
-        if self.otput_device : # we have an output device
+    # Method to disconnect the input and output devices, if they exist.
+    # This is called prior to any change in device selection.
+    # Note that the QWidget class has an existing method disconnect(),
+    # and we do not want to override that so that name is not used.
+
+    def disconnect_devices( self ) :
+
+        # If an output device exists, make it stop. That prevents it
+        # trying to pull any data from the input device if any.
+        if self.otput_device is not None :
             self.otput_device.stop()
-        if self.input_device : # we have an input device
+        # If an input device exists, make it stop also. That means it
+        # loses track of the output device it was formerly connected to.
+        if self.input_device is not None :
             self.input_device.stop()
-        self.otput_device = None
-        self.input_device = None
-        event.accept()
 
-    # Slot for any change in volume (or mute). If we have an output device
-    # then convert level to a real and pass to the output device. If the new
-    # level is 0, tell the device to stop; if nonzero, tell it to start.
-    # Note we don't do anything about the input device level, it is always 1.0
-    def volume_change( self, new_level ) :
-        if self.otput_device : # we have an output device
-            self.otput_device.setVolume( self.volume.value() / 100 )
-            if new_level == 0 : # looks like a mute
-                # tell the output device to stop just in case it
-                # doesn't know about volume control.
-                self.otput_device.stop()
-            else : # non-zero level, if the output is stopped, start it
-                if self.otput_device.state() == QAudio.StoppedState :
-                    self.otput_device.start()
+    # Method to connect the input and output devices, if both exist. This is
+    # called after making any change in device selection.
 
-    # Slot for mute switch. Note that any change to the volume slider
-    # generates a signal to the volume_change slot.
-    def mute_change( self, onoff ) :
-        if onoff :
-            # Mute has been clicked ON. Remember the current volume.
-            # Turn the volume to zero.
-            self.volume_level = self.volume.value()
-            self.volume.setValue( 0 )
+    def reconnect_devices( self ) :
+
+        if (self.input_device is not None) \
+           and (self.otput_device is not None ) :
+
+            # Connect the devices by asking the OUTput device for its
+            # QIODevice, and passing that to the INput device's start()
+            # method. This could equally well be done the other way,
+            # by passing the input dev's IODevice to the output device.
+
+            self.input_device.start( self.otput_device.start() )
+            #self.otput_device.start( self.input_device.start() )
+
+            # In case the output device was just created, set its volume.
+            self.set_volume()
+
+    # Method to set the volume on the output device. (The input device volume
+    # is always 1.0.) This is called on any change of the volume slider or
+    # of the Mute button or of the output device choice.
+
+    def set_volume( self ) :
+        if self.mute.isChecked() :
+            # Mute is ON, set volume to 0 regardless of volume slider
+            volume = 0.0
         else :
-            # Mute has been clicked OFF. If we do not yet have input and
-            # output devices, get them. Then reset the old volume level.
-            if self.otput_device is None :
-                # We are starting up and have no devices. Fake a call to
-                # the checkbox-change entries thus creating devices.
-                self.in_dev_change( self.cb_inputs.currentIndex() )
-                self.ot_dev_change( self.cb_inputs.currentIndex() )
-            self.volume.setValue( self.volume_level )
+            # Mute is OFF, set volume to float version of volume slider
+            volume = self.volume.value() / 100
+        if self.otput_device :
+            # an output device exists (almost always true), set it
+            self.otput_device.setVolume( volume )
 
-    # Slots for changes in the selection of the input- and output-device
-    # combo boxes. On startup we have neither an input nor an output device.
-    # We do not know which combox the user will fiddle with first. So either
-    # has to assume that the other device may not yet exist.
-    #
-    # On a change of input choice: if we have an input device, get rid of it.
-    # Create a new input device. Set its level to 1.0. If we
-    # have an output, connect the two.
+    # Slot entered upon any change in the volume slider widget.
+    def volume_change( self, new_level ) :
+        if self.mute.isChecked() :
+            # The Mute button is ON; assume the user wants it OFF, else why
+            # move the slider? Note this causes a call to set_volume().
+            self.mute.setChecked( False )
+        else :
+            # The Mute button is OFF, just change the volume.
+            self.set_volume()
+
+    # Slot entered upon toggling of the mute switch, by the user or by the
+    # code calling mute.setChecked(). Make sure the volume is set appropriately.
+    def mute_change( self, onoff ) :
+        self.set_volume()
+
+    # Slots for selection of the input and output devices. On startup we have
+    # neither an input nor an output device. We do not know which combox the
+    # user will fiddle with first.
+
+    # Slot entered upon any change in the selection of the input device
+    # combo box. The argument is the new index of the list of values.
 
     def in_dev_change( self, new_index ) :
-        if self.input_device :
-            if self.otput_device :
-                self.otput_device.stop()
-            self.input_device.stop()
-            self.input_device = None # goodby object
+
+        # Disconnect and stop the devices if they are connected.
+        self.disconnect_devices()
+
+        self.input_device = None # device object goes out of scope
+
         # Get the QAudioDeviceInfo corresponding to this index of the combox.
         audio_info = self.input_info_list[ new_index ]
+
         # Create a new QAudioInput based on that.
         preferred_format = audio_info.preferredFormat()
         self.input_device = QAudioInput( audio_info, preferred_format )
-        self.input_device.setVolume( 1.0 )
-        self.input_device.setBufferSize( 384 )
-        # hook up possible debug printout
-        self.input_device.stateChanged.connect(self.in_dev_state_change)
-        # If we have an output device, redirect it to this input. This is
-        # done by asking the OUTput device for its QIODevice, and passing that
-        # to the INput device's start() method.
-        if self.otput_device :
-            self.input_device.start( self.otput_device.start() )
-            #self.otput_device.start( self.input_device.start() )
-        # else wait for the output device to be created
 
-    # On a change in the selection of output choice: If we have an input
-    # device, tell it to stop. If we have an output device, get rid of it.
-    # Create a new output device. If we have an input device, connect the
-    # two. Set the output level from the volume slider.
+        # the input device volume is always 1.0, wide open.
+        self.input_device.setVolume( 1.0 )
+
+        # The choice of buffer size has a major impact on the lag. It needs
+        # to be small or there is severe echo; but if it is too small, there
+        # is a sputtering or "motor-boating" effect.
+        self.input_device.setBufferSize( 384 )
+
+        # hook up possible debug status display
+        self.input_device.stateChanged.connect(self.in_dev_state_change)
+
+        # reconnect the devices if possible.
+
+        self.reconnect_devices()
+
+    # Slot entered upon any change in the selection of output. The argument
+    # is the index to the list of output devices in the combobox.
 
     def ot_dev_change( self, new_index ) :
-        if self.otput_device :
-            if self.input_device :
-                self.input_device.stop()
-            self.otput_device.stop()
-            self.otput_device = None # object goes out of scope
+
+        # Disconnect and stop the devices if they are connected.
+        self.disconnect_devices()
+
+        self.otput_device = None # device object goes out of scope
+
+        # Get the QAudioDeviceInfo corresponding to this index of the combox.
         audio_info = self.otput_info_list[ new_index ]
+
+        # Create a new QAudioOutput based on that.
         preferred_format = audio_info.preferredFormat()
         self.otput_device = QAudioOutput( audio_info, preferred_format )
-        self.otput_device.setVolume( self.volume.value() / 100 )
+        self.otput_device.setVolume( 0 ) # reconnect will set correct volume
+
+        # hook up possible debug status display
         self.otput_device.stateChanged.connect(self.ot_dev_state_change)
-        #self.otput_device.setBufferSize( 384 )
-        if self.input_device :
-            self.input_device.start( self.otput_device.start() )
-            #self.otput_device.start( self.input_device.start() )
+
+        # reconnect the devices if possible. Which also sets the volume.
+
+        self.reconnect_devices()
+
 
     # Show some text in the main-window status bar for 1 second, more or less.
     def show_status( self, text, duration=1000 ):
         self.status_bar.showMessage( text, duration )
 
+    # Slots called on any "state" change of an audio device. Optionally
+    # show the state in the main window status bar.
     def in_dev_state_change( self, new_state):
         #self.show_status(
             #'{} in dev state {}'.format(self.time.elapsed(),int(new_state))
         #)
         pass
-
     def ot_dev_state_change( self, new_state):
         #self.show_status(
             #'{} ot dev state {}'.format(self.time.elapsed(),int(new_state))
         #)
         pass
+
+    # Define a custom CloseEvent handler. When we receive the Close event,
+    # and we have working audio devices, stop them and trash them. The intent
+    # is to hopefully avoid an occasional segfault in the Mac audio device on
+    # shutdown.
+    def closeEvent( self, event ) :
+        self.disconnect_devices()
+        self.otput_device = None
+        self.input_device = None
+        event.accept() # go ahead and close now
 
     def _uic( self ) :
         '''
