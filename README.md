@@ -17,3 +17,15 @@ Whatever.
 After selecting the input and output, click to turn off the Mute checkbox.
 Adjust the volume slider while speaking into the mic.
 You should hear your own voice in the output with minimal latency.
+
+The choice of in/out devices and the volume and mute settings are remembered
+and restored on the next run.
+
+You need to have PyQt5 and Python 3.4+ installed. Then start the app using
+
+    `python sidetone.py`
+
+
+*Hey, apologies to the person who submitted a pull request to add info to this
+readme. I stupidly did a push of new code before updating my master, and wiped
+out the merged pull. Feel free to submit another.*
