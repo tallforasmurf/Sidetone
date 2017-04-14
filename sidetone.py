@@ -40,10 +40,12 @@ from PyQt5.QtMultimedia import (
 )
 
 class SideToneWidget( QWidget ) :
-    def __init__( self, parent ) :
+    def __init__( self, parent, the_settings ) :
         super().__init__( parent )
         # Save link to main window
         self.main_window = parent
+        # Save link to settings object
+        self.settings = the_settings
         # Get the status bar
         self.status_bar = parent.statusBar()
         # just the time
@@ -61,16 +63,22 @@ class SideToneWidget( QWidget ) :
         #   self.volume, volume slider
         #   self.mute, mute checkbox
         self._uic()
-        # Connect up signals to slots.
-        # Changes in the combox selections go to in_device and ot_device
-        self.cb_inputs.currentIndexChanged.connect( self.in_dev_change )
-        self.cb_otputs.currentIndexChanged.connect( self.ot_dev_change )
+        # Connect up signals to slots. Up to this point, the changes that
+        # _uic() made in e.g. the volume or mute, or the combobox selections,
+        # raised signals that were not connected. Now connect the signals
+        # so that user-changes go to our slots for handling.
         # Mute button goes to mute_change
         self.mute.stateChanged.connect( self.mute_change )
         # Change in volume goes to volume_change
         self.volume.valueChanged.connect( self.volume_change )
-        # Start with the mute switch on. This triggers the above two signals.
-        self.mute.setChecked( True )
+        # Changes in the combox selections go to in_device and ot_device
+        self.cb_inputs.currentIndexChanged.connect( self.in_dev_change )
+        self.cb_otputs.currentIndexChanged.connect( self.ot_dev_change )
+        # Now pretend the user has made a selection of the in and out devices.
+        # That should result in activating everythings.
+        self.in_dev_change( self.cb_inputs.currentIndex() )
+        self.ot_dev_change( self.cb_otputs.currentIndex() )
+
 
     # Method to disconnect the input and output devices, if they exist.
     # This is called prior to any change in device selection.
@@ -177,7 +185,7 @@ class SideToneWidget( QWidget ) :
     # is the index to the list of output devices in the combobox.
 
     def ot_dev_change( self, new_index ) :
-
+        print('index',new_index)
         # Disconnect and stop the devices if they are connected.
         self.disconnect_devices()
 
@@ -216,15 +224,31 @@ class SideToneWidget( QWidget ) :
         #)
         pass
 
-    # Define a custom CloseEvent handler. When we receive the Close event,
-    # and we have working audio devices, stop them and trash them. The intent
-    # is to hopefully avoid an occasional segfault in the Mac audio device on
-    # shutdown.
+    # Close events are only received by a top-level widget. When our top-level
+    # widget gets one, indicating the app is done, it calls this method.
+
     def closeEvent( self, event ) :
+        # if we have devices, make them stop.
         self.disconnect_devices()
-        self.otput_device = None
-        self.input_device = None
-        event.accept() # go ahead and close now
+
+        # if the devices exist, reset them and then trash them.
+        if self.otput_device is not None:
+            self.otput_device.reset()
+            self.otput_device = None
+        if self.input_device is not None:
+            self.input_device.reset()
+            self.input_device = None
+
+        # Save the current selection of the input and output combo boxes,
+        # in the settings file.
+        in_dev_name = self.cb_inputs.currentText()
+        self.settings.setValue( 'in_dev_name', in_dev_name )
+        ot_dev_name = self.cb_otputs.currentText()
+        self.settings.setValue( 'ot_dev_name', ot_dev_name )
+
+        # Save the volume setting and mute status in the settings.
+        self.settings.setValue( 'volume', self.volume.value() )
+        self.settings.setValue( 'mute_status', int( self.mute.isChecked() ) )
 
     def _uic( self ) :
         '''
@@ -253,24 +277,40 @@ class SideToneWidget( QWidget ) :
         self.input_info_list = QAudioDeviceInfo.availableDevices( QAudio.AudioInput )
         if 0 == len(self.input_info_list) :
             self.input_info_list = [ QAudioDeviceInfo.defaultInputDevice() ]
-        # Create a combo box and populate it with names of inputs
+        # Make a list of the name-strings for those items.
+        in_dev_names = [ audio_info.deviceName() for audio_info in self.input_info_list ]
+        # Create a combo box and populate it with those names
         self.cb_inputs = QComboBox()
-        self.cb_inputs.addItems(
-            [ audio_info.deviceName() for audio_info in self.input_info_list ]
-            )
+        self.cb_inputs.addItems( in_dev_names )
+        # If the in_dev_name from the previous run is in the current list,
+        # make it current, otherwise pick the first item.
+        in_dev_name = self.settings.value( 'in_dev_name', 'unknown' )
+        if in_dev_name in in_dev_names :
+            self.cb_inputs.setCurrentIndex( in_dev_names.index( in_dev_name ) )
+        else :
+            self.cb_inputs.setCurrentIndex( 0 )
 
         # Create a list of QAudioInfo objects for outputs
         self.otput_info_list = QAudioDeviceInfo.availableDevices( QAudio.AudioOutput )
         if 0 == len( self.otput_info_list ) :
             self.otput_info_list = [ QAudioDeviceInfo.defaultOutputDevice() ]
-        self.show_status(
-            '{} inputs {} otputs'.format(len(self.input_info_list),len(self.otput_info_list))
-        )
-        # Create a combo box and populate it with names of outputs
+        # Make a list of the name-strings of those things
+        ot_dev_names = [ audio_info.deviceName() for audio_info in self.otput_info_list ]
+        # Create a combo box and populate it with those names
         self.cb_otputs = QComboBox()
-        self.cb_otputs.addItems(
-            [ audio_info.deviceName() for audio_info in self.otput_info_list ]
-            )
+        self.cb_otputs.addItems( ot_dev_names )
+        # If the ot_dev_name from the previous run is in the current list,
+        # make it the current choice in the box.
+        ot_dev_name = self.settings.value( 'ot_dev_name', 'unknown' )
+        if ot_dev_name in ot_dev_names :
+            self.cb_otputs.setCurrentIndex( ot_dev_names.index( ot_dev_name ) )
+        else :
+            self.cb_otputs.setCurrentIndex( 0 )
+
+        #self.show_status(
+            #'{} inputs {} otputs'.format(len(self.input_info_list),len(self.otput_info_list))
+        #)
+        # Create a combo box and populate it with names of outputs
 
         # Lay those two out aligned to the outside
         hb_combos = QHBoxLayout()
@@ -284,9 +324,13 @@ class SideToneWidget( QWidget ) :
         self.volume.setMaximum( 100 )
         self.volume.setTickInterval( 10 )
         self.volume.setTickPosition( QSlider.TicksBothSides )
+        # set the volume slider to the value from the previous run, or zero.
+        self.volume.setValue( self.settings.value( 'volume', 0 ) )
 
         # Create a checkbox "Mute"
         self.mute = QCheckBox( 'Mute' )
+        # Set it to the value at the end of the last run, or to True
+        self.mute.setChecked( bool( self.settings.value( 'mute_status', 1 ) ) )
 
         # Put those together in a row squeezed in the center
         hb_volume = QHBoxLayout()
@@ -304,17 +348,58 @@ class SideToneWidget( QWidget ) :
 
         # end of _uic
 
+# Define a main window subclass so as to receive close events, mainly.
+# Initialization input is the settings object.
+
+class MyMainWindow( QMainWindow ) :
+    def __init__( self, the_settings ) :
+        super().__init__( None ) # parentless main window
+
+        # Create the real widget and set it as our central widget.
+        self.sidetone = SideToneWidget( self, the_settings )
+        self.setCentralWidget( self.sidetone )
+
+    # Define a custom closeEvent handler. When the app is terminated
+    # this is called. Just pass the call on to the closeEvent in the
+    # sideTone widget. Note: I don't know why but this is entered twice.
+    # That's harmless but annoying.
+
+    def closeEvent( self, event ) :
+        self.sidetone.closeEvent( event )
+        super().closeEvent( event ) # go ahead and close now
+
 def main():
     import sys
     import icon
-    app = QApplication(sys.argv)
+    # Start the application. This does a ton of Qt setup stuff.
+    the_app = QApplication(sys.argv)
     QTest.qWait( 500 ) # idle for half a second before doing stuff
 
-    main = QMainWindow()
-    central = SideToneWidget( main )
-    main.setCentralWidget( central )
+    '''
+    With the application started, set the constants that define where
+    the settings file is stored and what it is called. Then open the settings.
+
+    FYI: Locations for Qt settings values:
+                    Linux: $HOME/.config/TassoSoft/Sidetone.conf
+                  Mac OSX: $HOME/Library/Preferences/com.TassoSoft.Sidetone.plist
+    Windows (registry): HKEY_CURRENT_USER\Software\TassoSoft\Sidetone
+
+    '''
+
+    the_app.setOrganizationName( "TassoSoft" )
+    the_app.setOrganizationDomain( "tassos-oak.com" )
+    the_app.setApplicationName( "Sidetone" )
+
+    from PyQt5.QtCore import QSettings
+    the_settings = QSettings()
+    '''
+    Uncomment the following to wipe all settings everything back to defaults.
+    '''
+    #the_settings.clear()
+
+    main = MyMainWindow( the_settings )
     main.show()
-    app.exec_()
+    the_app.exec_()
     QTest.qWait( 500 ) # idle for half a second to let Python shut down
 
 if __name__ == '__main__' :
