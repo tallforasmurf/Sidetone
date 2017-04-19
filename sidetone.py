@@ -39,6 +39,13 @@ from PyQt5.QtMultimedia import (
     QAudioOutput
 )
 
+'''
+
+One instance of the following class is instantiated and made the "central
+widget" of the QMainWindow. Basically the whole UI is in this object. The
+Main Window acts as a container and captures the closeEvent.
+
+'''
 class SideToneWidget( QWidget ) :
     def __init__( self, parent, the_settings ) :
         super().__init__( parent )
@@ -83,7 +90,7 @@ class SideToneWidget( QWidget ) :
     # Method to disconnect the input and output devices, if they exist.
     # This is called prior to any change in device selection.
     # Note that the QWidget class has an existing method disconnect(),
-    # and we do not want to override that so that name is not used.
+    # and we do not want to override that, so that name is not used.
 
     def disconnect_devices( self ) :
 
