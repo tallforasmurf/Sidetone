@@ -21,11 +21,12 @@ You should hear your own voice in the output with minimal latency.
 The choice of in/out devices and the volume and mute settings are remembered
 and restored on the next run.
 
-You need to have PyQt5 and Python 3.4+ installed. Then start the app using
+# Installation and usage
 
-    python sidetone.py
+```bash 
+pip3 install PyQt5 # Only needed to install PyQt5 the first time
+python3 sidetone.py # Start sidetone
+```
 
-
-*Hey, apologies to the person who submitted a pull request to add info to this
-readme. I stupidly did a push of new code before updating my master, and wiped
-out the merged pull. Feel free to submit another.*
+Run `nohup python3 sidetone.py &` to background the process and detach it from
+the current shell.
